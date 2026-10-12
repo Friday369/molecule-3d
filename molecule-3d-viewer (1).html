@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Molscope — 3D Molecule &amp; Force Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/3Dmol/2.5.3/3Dmol-min.js"></script>
+<style>
+  :root{
+    --bg:#0A0D10;
+    --panel:#12161B;
+    --panel-2:#171C22;
+    --line:#262D35;
+    --text:#E8ECEF;
+    --text-dim:#8A94A0;
+    --teal:#4FD8C4;
+    --amber:#F5A623;
+    --violet:#9B8CFF;
+    --red:#F2545B;
+    --mono:'IBM Plex Mono', monospace;
+    --sans:'IBM Plex Sans', sans-serif;
+    --disp:'Space Grotesk', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:var(--sans);}
+  body{min-height:100vh;}
+
+  .scope-lines{
+    position:fixed; inset:0; pointer-events:none; z-index:0;
+    background-image: linear-gradient(rgba(79,216,196,0.035) 1px, transparent 1px);
+    background-size: 100% 28px;
+  }
+
+  header{
+    padding:22px 28px 16px 28px;
+    border-bottom:1px solid var(--line);
+    position:relative; z-index:1;
+  }
+  .brand{
+    display:flex; align-items:baseline; gap:10px;
+  }
+  .brand .mark{
+    width:10px;height:10px;border-radius:50%;
+    background:var(--teal);
+    box-shadow:0 0 10px var(--teal);
+    display:inline-block;
+    animation:pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+  h1{
+    font-family:var(--disp); font-weight:700; font-size:22px; letter-spacing:0.5px;
+    margin:0;
+  }
+  .tagline{
+    font-family:var(--mono); font-size:12px; color:var(--text-dim); margin-top:4px; letter-spacing:0.3px;
+  }
+
+  .search-row{
+    margin-top:18px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;
+  }
+  #query{
+    flex:1; min-width:220px;
+    background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+    font-family:var(--mono); font-size:14px; padding:12px 14px; border-radius:6px;
+    outline:none;
+  }
+  #query::placeholder{color:#5C6672;}
+  #query:focus{border-color:var(--teal); box-shadow:0 0 0 3px rgba(79,216,196,0.12);}
+  button.primary{
+    background:var(--teal); color:#04201C; border:none; font-family:var(--disp); font-weight:600;
+    font-size:14px; padding:12px 20px; border-radius:6px; cursor:pointer; letter-spacing:0.3px;
+  }
+  button.primary:hover{background:#6ee4d2;}
+  button.primary:disabled{opacity:0.5; cursor:default;}
+
+  .chips{margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;}
+  .chip{
+    font-family:var(--mono); font-size:11.5px; color:var(--text-dim);
+    background:transparent; border:1px solid var(--line); padding:5px 10px; border-radius:20px;
+    cursor:pointer;
+  }
+  .chip:hover{border-color:var(--teal); color:var(--teal);}
+
+  main{
+    position:relative; z-index:1;
+    display:grid; grid-template-columns: 1.5fr 1fr; gap:1px; background:var(--line);
+    min-height:560px;
+  }
+  @media (max-width:860px){ main{ grid-template-columns:1fr; } }
+
+  .viewer-col{ background:var(--bg); display:flex; flex-direction:column; }
+  #viewer{ flex:1; min-height:420px; position:relative; background:#05070A; }
+  #viewer .hint{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font-family:var(--mono); font-size:13px; color:#3E4750; text-align:center; padding:20px;
+  }
+  .viewer-controls{
+    display:flex; gap:8px; flex-wrap:wrap; padding:12px 16px; border-top:1px solid var(--line);
+    background:var(--panel);
+  }
+  .seg{ display:flex; border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+  .seg button{
+    background:var(--panel-2); color:var(--text-dim); border:none; padding:7px 12px;
+    font-family:var(--mono); font-size:11.5px; cursor:pointer; border-right:1px solid var(--line);
+  }
+  .seg button:last-child{border-right:none;}
+  .seg button.on{ background:var(--teal); color:#04201C; }
+  .toggle-btn{
+    background:var(--panel-2); color:var(--text-dim); border:1px solid var(--line); border-radius:6px;
+    padding:7px 12px; font-family:var(--mono); font-size:11.5px; cursor:pointer;
+  }
+  .toggle-btn.on{ border-color:var(--amber); color:var(--amber); }
+
+  .data-col{ background:var(--panel); display:flex; flex-direction:column; max-height:none; }
+  .panel{ padding:18px 20px; border-bottom:1px solid var(--line); }
+  .panel:last-child{ border-bottom:none; }
+  .panel h2{
+    font-family:var(--mono); font-size:11px; letter-spacing:1.5px; text-transform:uppercase;
+    color:var(--text-dim); margin:0 0 12px 0;
+  }
+
+  .kv{ display:grid; grid-template-columns: auto 1fr; gap:6px 14px; font-family:var(--mono); font-size:13px; }
+  .kv .k{ color:var(--text-dim); }
+  .kv .v{ color:var(--text); word-break:break-word; }
+  .kv .v.big{ font-size:16px; color:var(--teal); font-weight:600; }
+
+  .force-item{
+    border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin-bottom:10px;
+    background:var(--panel-2);
+  }
+  .force-item:last-child{ margin-bottom:0; }
+  .force-item .fname{
+    font-family:var(--disp); font-weight:600; font-size:14px; display:flex; align-items:center; gap:8px;
+  }
+  .force-item .fdesc{
+    font-family:var(--sans); font-size:12.5px; color:var(--text-dim); margin-top:5px; line-height:1.45;
+  }
+  .dot{ width:9px;height:9px;border-radius:50%; display:inline-block; flex-shrink:0; }
+  .bar-track{ height:6px; border-radius:3px; background:#22282F; margin-top:8px; overflow:hidden; }
+  .bar-fill{ height:100%; border-radius:3px; }
+
+  .empty-note{ font-family:var(--mono); font-size:12px; color:#3E4750; line-height:1.6; }
+  .error-box{
+    font-family:var(--mono); font-size:12.5px; color:var(--red); background:rgba(242,84,91,0.08);
+    border:1px solid rgba(242,84,91,0.35); border-radius:6px; padding:10px 12px;
+  }
+  .disclaimer{
+    font-family:var(--mono); font-size:10.5px; color:#4A5259; padding:14px 28px 26px 28px; line-height:1.6;
+    position:relative; z-index:1;
+  }
+  .loading-line{
+    font-family:var(--mono); font-size:12px; color:var(--amber);
+  }
+  .spinner{
+    display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--amber);
+    animation:blink 1s steps(1) infinite; margin-right:6px;
+  }
+  @keyframes blink{50%{opacity:0.15;}}
+</style>
+</head>
+<body>
+<div class="scope-lines"></div>
+
+<header>
+  <div class="brand"><span class="mark"></span><h1>MOLSCOPE</h1></div>
+  <div class="tagline">3D structure &amp; intermolecular force readout — atoms, molecules, compounds</div>
+
+  <div class="search-row">
+    <input id="query" type="text" placeholder="e.g. water, NaCl, glucose, CO2, Fe, oxygen..." autocomplete="off">
+    <button class="primary" id="searchBtn">Render</button>
+  </div>
+  <div class="chips" id="chips"></div>
+</header>
+
+<main>
+  <div class="viewer-col">
+    <div id="viewer"><div class="hint">Enter an element, molecule, or compound name above to render its 3D structure.</div></div>
+    <div class="viewer-controls">
+      <div class="seg" id="styleSeg">
+        <button data-style="stick" class="on">Ball &amp; Stick</button>
+        <button data-style="sphere">Space-fill</button>
+        <button data-style="line">Wireframe</button>
+      </div>
+      <button class="toggle-btn on" id="labelBtn">Atom labels: on</button>
+      <button class="toggle-btn" id="spinBtn">Spin: off</button>
+      <button class="toggle-btn" id="bgBtn">BG: dark</button>
+    </div>
+  </div>
+
+  <div class="data-col" id="dataCol">
+    <div class="panel">
+      <h2>Status</h2>
+      <div class="empty-note" id="statusNote">Waiting for input. Try one of the examples below the search bar.</div>
+    </div>
+  </div>
+</main>
+
+<div class="disclaimer">
+  Structures and 3D conformers are retrieved live from PubChem (National Center for Biotechnology Information). Force classifications are generated with simplified educational heuristics based on molecular properties (polarity, H-bond donor/acceptor counts, elemental composition) — they illustrate the dominant forces typically taught at introductory level, not a rigorous computational analysis. Single elements are shown as isolated atoms with their characteristic bulk-bonding behavior noted, since a lone atom cannot itself exhibit intermolecular forces.
+</div>
+
+<script>
+// ---------------------------------------------------------------
+// Periodic table data: number,symbol,name,mass,category
+// ---------------------------------------------------------------
+const PT_RAW = `
+1,H,Hydrogen,1.008,nonmetal
+2,He,Helium,4.003,noble gas
+3,Li,Lithium,6.94,alkali metal
+4,Be,Beryllium,9.012,alkaline earth metal
+5,B,Boron,10.81,metalloid
+6,C,Carbon,12.011,nonmetal
+7,N,Nitrogen,14.007,nonmetal
+8,O,Oxygen,15.999,nonmetal
+9,F,Fluorine,18.998,halogen
+10,Ne,Neon,20.180,noble gas
+11,Na,Sodium,22.990,alkali metal
+12,Mg,Magnesium,24.305,alkaline earth metal
+13,Al,Aluminium,26.982,post-transition metal
+14,Si,Silicon,28.085,metalloid
+15,P,Phosphorus,30.974,nonmetal
+16,S,Sulfur,32.06,nonmetal
+17,Cl,Chlorine,35.45,halogen
+18,Ar,Argon,39.948,noble gas
+19,K,Potassium,39.098,alkali metal
+20,Ca,Calcium,40.078,alkaline earth metal
+21,Sc,Scandium,44.956,transition metal
+22,Ti,Titanium,47.867,transition metal
+23,V,Vanadium,50.942,transition metal
+24,Cr,Chromium,51.996,transition metal
+25,Mn,Manganese,54.938,transition metal
+26,Fe,Iron,55.845,transition metal
+27,Co,Cobalt,58.933,transition metal
+28,Ni,Nickel,58.693,transition metal
+29,Cu,Copper,63.546,transition metal
+30,Zn,Zinc,65.38,transition metal
+31,Ga,Gallium,69.723,post-transition metal
+32,Ge,Germanium,72.630,metalloid
+33,As,Arsenic,74.922,metalloid
+34,Se,Selenium,78.971,nonmetal
+35,Br,Bromine,79.904,halogen
+36,Kr,Krypton,83.798,noble gas
+37,Rb,Rubidium,85.468,alkali metal
+38,Sr,Strontium,87.62,alkaline earth metal
+39,Y,Yttrium,88.906,transition metal
+40,Zr,Zirconium,91.224,transition metal
+41,Nb,Niobium,92.906,transition metal
+42,Mo,Molybdenum,95.95,transition metal
+43,Tc,Technetium,98,transition metal
+44,Ru,Ruthenium,101.07,transition metal
+45,Rh,Rhodium,102.906,transition metal
+46,Pd,Palladium,106.42,transition metal
+47,Ag,Silver,107.868,transition metal
+48,Cd,Cadmium,112.414,transition metal
+49,In,Indium,114.818,post-transition metal
+50,Sn,Tin,118.710,post-transition metal
+51,Sb,Antimony,121.760,metalloid
+52,Te,Tellurium,127.60,metalloid
+53,I,Iodine,126.904,halogen
+54,Xe,Xenon,131.293,noble gas
+55,Cs,Caesium,132.905,alkali metal
+56,Ba,Barium,137.327,alkaline earth metal
+57,La,Lanthanum,138.905,lanthanide
+58,Ce,Cerium,140.116,lanthanide
+59,Pr,Praseodymium,140.908,lanthanide
+60,Nd,Neodymium,144.242,lanthanide
+61,Pm,Promethium,145,lanthanide
+62,Sm,Samarium,150.36,lanthanide
+63,Eu,Europium,151.964,lanthanide
+64,Gd,Gadolinium,157.25,lanthanide
+65,Tb,Terbium,158.925,lanthanide
+66,Dy,Dysprosium,162.500,lanthanide
+67,Ho,Holmium,164.930,lanthanide
+68,Er,Erbium,167.259,lanthanide
+69,Tm,Thulium,168.934,lanthanide
+70,Yb,Ytterbium,173.045,lanthanide
+71,Lu,Lutetium,174.967,lanthanide
+72,Hf,Hafnium,178.49,transition metal
+73,Ta,Tantalum,180.948,transition metal
+74,W,Tungsten,183.84,transition metal
+75,Re,Rhenium,186.207,transition metal
+76,Os,Osmium,190.23,transition metal
+77,Ir,Iridium,192.217,transition metal
+78,Pt,Platinum,195.084,transition metal
+79,Au,Gold,196.967,transition metal
+80,Hg,Mercury,200.592,transition metal
+81,Tl,Thallium,204.38,post-transition metal
+82,Pb,Lead,207.2,post-transition metal
+83,Bi,Bismuth,208.980,post-transition metal
+84,Po,Polonium,209,metalloid
+85,At,Astatine,210,halogen
+86,Rn,Radon,222,noble gas
+87,Fr,Francium,223,alkali metal
+88,Ra,Radium,226,alkaline earth metal
+89,Ac,Actinium,227,actinide
+90,Th,Thorium,232.038,actinide
+91,Pa,Protactinium,231.036,actinide
+92,U,Uranium,238.029,actinide
+93,Np,Neptunium,237,actinide
+94,Pu,Plutonium,244,actinide
+95,Am,Americium,243,actinide
+96,Cm,Curium,247,actinide
+97,Bk,Berkelium,247,actinide
+98,Cf,Californium,251,actinide
+99,Es,Einsteinium,252,actinide
+100,Fm,Fermium,257,actinide
+101,Md,Mendelevium,258,actinide
+102,No,Nobelium,259,actinide
+103,Lr,Lawrencium,262,actinide
+104,Rf,Rutherfordium,267,transition metal
+105,Db,Dubnium,270,transition metal
+106,Sg,Seaborgium,271,transition metal
+107,Bh,Bohrium,270,transition metal
+108,Hs,Hassium,277,transition metal
+109,Mt,Meitnerium,278,transition metal
+110,Ds,Darmstadtium,281,transition metal
+111,Rg,Roentgenium,282,transition metal
+112,Cn,Copernicium,285,transition metal
+113,Nh,Nihonium,286,post-transition metal
+114,Fl,Flerovium,289,post-transition metal
+115,Mc,Moscovium,290,post-transition metal
+116,Lv,Livermorium,293,post-transition metal
+117,Ts,Tennessine,294,halogen
+118,Og,Oganesson,294,noble gas
+`.trim().split("\n").map(r=>{
+  const [num,sym,name,mass,cat] = r.split(",");
+  return {num:+num, sym, name, mass:+mass, cat};
+});
+const BY_SYMBOL = {}; const BY_NAME = {};
+PT_RAW.forEach(e=>{ BY_SYMBOL[e.sym.toLowerCase()] = e; BY_NAME[e.name.toLowerCase()] = e; });
+
+const METAL_CATS = new Set(["alkali metal","alkaline earth metal","transition metal","post-transition metal","lanthanide","actinide"]);
+const METAL_SYMBOLS = new Set(PT_RAW.filter(e=>METAL_CATS.has(e.cat)).map(e=>e.sym));
+const HALOGEN_SYMBOLS = new Set(["F","Cl","Br","I","At"]);
+
+function findElement(q){
+  const key = q.trim().toLowerCase();
+  return BY_SYMBOL[key] || BY_NAME[key] || null;
+}
+
+// ---------------------------------------------------------------
+// State / DOM refs
+// ---------------------------------------------------------------
+let viewer = null;
+let currentStyle = 'stick';
+let spinning = false;
+let bgDark = true;
+let labelsOn = true;
+let currentRender = null; // { mode: 'atom'|'compound', el? }
+
+const queryEl = document.getElementById('query');
+const searchBtn = document.getElementById('searchBtn');
+const dataCol = document.getElementById('dataCol');
+const viewerHost = document.getElementById('viewer');
+const chipsEl = document.getElementById('chips');
+
+const EXAMPLES = ["Water","Table salt","Carbon dioxide","Glucose","Iron","Methane","Ammonia","Oxygen","Ethanol","Neon"];
+EXAMPLES.forEach(ex=>{
+  const b = document.createElement('button');
+  b.className='chip'; b.textContent=ex;
+  b.onclick = ()=>{ queryEl.value = ex; runSearch(); };
+  chipsEl.appendChild(b);
+});
+
+function initViewer(){
+  viewerHost.innerHTML = '';
+  viewer = $3Dmol.createViewer(viewerHost, { backgroundColor: bgDark ? '#05070A' : '#EDEFF1' });
+  return viewer;
+}
+initViewer();
+
+document.getElementById('styleSeg').addEventListener('click', (e)=>{
+  const btn = e.target.closest('button'); if(!btn) return;
+  document.querySelectorAll('#styleSeg button').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  currentStyle = btn.dataset.style;
+  applyStyle();
+});
+document.getElementById('labelBtn').addEventListener('click', (e)=>{
+  labelsOn = !labelsOn;
+  e.target.classList.toggle('on', labelsOn);
+  e.target.textContent = 'Atom labels: ' + (labelsOn ? 'on' : 'off');
+  updateLabels();
+});
+document.getElementById('spinBtn').addEventListener('click', (e)=>{
+  spinning = !spinning;
+  e.target.classList.toggle('on', spinning);
+  e.target.textContent = 'Spin: ' + (spinning ? 'on' : 'off');
+  if(viewer){ spinning ? viewer.spin('y', 1) : viewer.spin(false); }
+});
+document.getElementById('bgBtn').addEventListener('click', (e)=>{
+  bgDark = !bgDark;
+  e.target.classList.toggle('on', !bgDark);
+  e.target.textContent = 'BG: ' + (bgDark ? 'dark' : 'light');
+  if(viewer){ viewer.setBackgroundColor(bgDark ? '#05070A' : '#EDEFF1'); viewer.render(); }
+});
+
+function updateLabels(){
+  if(!viewer) return;
+  viewer.removeAllLabels();
+  if(!labelsOn || !currentRender) { viewer.render(); return; }
+
+  const labelStyle = {
+    fontColor:'#EAEFF2', fontSize:12, font:'IBM Plex Mono',
+    backgroundColor:'#0A0D10', backgroundOpacity:0.75,
+    borderThickness:0.4, borderColor:'#4FD8C4', borderOpacity:0.6,
+    inFront:true, showBackground:true
+  };
+
+  if(currentRender.mode === 'atom'){
+    viewer.addLabel(currentRender.el.sym, Object.assign({}, labelStyle, {
+      fontSize:16, position:{x:0,y:0,z:0}
+    }));
+  } else {
+    viewer.addPropertyLabels('elem', {}, labelStyle);
+  }
+  viewer.render();
+}
+
+function applyStyle(){
+  if(!viewer) return;
+  viewer.setStyle({}, {});
+  if(currentStyle === 'stick'){
+    viewer.setStyle({}, { stick:{ radius:0.14 }, sphere:{ scale:0.28 } });
+  } else if(currentStyle === 'sphere'){
+    viewer.setStyle({}, { sphere:{ scale:0.9 } });
+  } else {
+    viewer.setStyle({}, { line:{ linewidth:3 } });
+  }
+  viewer.render();
+}
+
+searchBtn.addEventListener('click', runSearch);
+queryEl.addEventListener('keydown', (e)=>{ if(e.key==='Enter') runSearch(); });
+
+// ---------------------------------------------------------------
+// Main search flow
+// ---------------------------------------------------------------
+async function runSearch(){
+  const raw = queryEl.value.trim();
+  if(!raw) return;
+  searchBtn.disabled = true;
+  setStatus(`<span class="loading-line"><span class="spinner"></span>Resolving "${escapeHtml(raw)}"…</span>`);
+  viewerHost.querySelector('.hint')?.remove();
+
+  try{
+    const el = findElement(raw);
+    const looksLikeFormula = /^([A-Z][a-z]?\d*)+$/.test(raw) && raw.length <= 40;
+
+    if(el && !/\d/.test(raw)){
+      renderAtom(el);
+      return;
+    }
+
+    let cid = null;
+    if(looksLikeFormula){
+      cid = await tryFastFormula(raw) || await tryNameSearch(raw);
+    } else {
+      cid = await tryNameSearch(raw) || await tryFastFormula(raw);
+    }
+
+    if(!cid){
+      setStatus(`<div class="error-box">No match found for "${escapeHtml(raw)}" in PubChem. Try a common name (e.g. "aspirin"), a molecular formula (e.g. "C2H6O"), or an element symbol/name.</div>`);
+      searchBtn.disabled = false;
+      return;
+    }
+
+    await renderCompound(cid, raw);
+  } catch(err){
+    console.error(err);
+    setStatus(`<div class="error-box">Something went wrong fetching data (${escapeHtml(err.message || String(err))}). This can happen with network restrictions or an unrecognized name — try again or use a different term.</div>`);
+  } finally {
+    searchBtn.disabled = false;
+  }
+}
+
+async function tryNameSearch(name){
+  try{
+    const url = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${encodeURIComponent(name)}/cids/JSON`;
+    const res = await fetch(url);
+    if(!res.ok) return null;
+    const data = await res.json();
+    return data?.IdentifierList?.CID?.[0] || null;
+  } catch(e){ return null; }
+}
+async function tryFastFormula(formula){
+  try{
+    const url = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/fastformula/${encodeURIComponent(formula)}/cids/JSON`;
+    const res = await fetch(url);
+    if(!res.ok) return null;
+    const data = await res.json();
+    return data?.IdentifierList?.CID?.[0] || null;
+  } catch(e){ return null; }
+}
+
+async function fetchSDF(cid){
+  // Prefer a real 3D conformer; fall back to whatever record is available.
+  for(const rt of ['3d', null]){
+    try{
+      const url = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/SDF` + (rt ? `?record_type=${rt}` : '');
+      const res = await fetch(url);
+      if(res.ok){
+        const text = await res.text();
+        if(text && text.includes('V2000')) return { sdf:text, is3d: rt==='3d' };
+      }
+    } catch(e){ /* try next */ }
+  }
+  throw new Error('no SDF structure available');
+}
+
+async function fetchProps(cid){
+  const props = ['MolecularFormula','MolecularWeight','IUPACName','XLogP','TPSA','HBondDonorCount','HBondAcceptorCount','Charge','HeavyAtomCount','CovalentUnitCount'];
+  const url = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/property/${props.join(',')}/JSON`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error('property lookup failed');
+  const data = await res.json();
+  return data?.PropertyTable?.Properties?.[0] || {};
+}
+
+async function fetchCommonName(cid, fallback){
+  try{
+    const url = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/synonyms/JSON`;
+    const res = await fetch(url);
+    if(!res.ok) return fallback;
+    const data = await res.json();
+    const syns = data?.InformationList?.Information?.[0]?.Synonym;
+    if(syns && syns.length){
+      // pick the shortest reasonably-cased synonym as the "common" name
+      const candidates = syns.filter(s=>s.length < 30).sort((a,b)=>a.length-b.length);
+      return candidates[0] || syns[0];
+    }
+    return fallback;
+  } catch(e){ return fallback; }
+}
+
+// ---------------------------------------------------------------
+// Rendering: single atom
+// ---------------------------------------------------------------
+function renderAtom(el){
+  initViewer();
+  viewer.addAtoms([{ elem: el.sym, x:0, y:0, z:0 }]);
+  viewer.setStyle({}, { sphere:{ scale:1.0 } });
+  viewer.zoomTo();
+  currentRender = { mode:'atom', el };
+  updateLabels();
+  if(spinning) viewer.spin('y',1);
+
+  const forces = atomForces(el);
+  renderDataPanels({
+    mode:'atom',
+    formula: el.sym,
+    name: el.name,
+    mw: el.mass.toFixed(3) + ' u (atomic mass)',
+    atoms: 1,
+    bonds: 0,
+    extraKV: [ ['Atomic number', el.num], ['Category', capitalize(el.cat)] ],
+    forces,
+    note: 'A single isolated atom cannot exhibit intermolecular forces on its own — these describe how this element typically bonds with itself or others in bulk.'
+  });
+}
+
+function atomForces(el){
+  const forces = [];
+  if(METAL_CATS.has(el.cat)){
+    forces.push({
+      name:'Metallic bonding', color:'var(--amber)', strength:0.85,
+      desc:`In bulk ${el.name.toLowerCase()}, atoms release valence electrons into a shared "sea" that moves freely between positive metal cores — this delocalized attraction is what makes metals conductive, malleable, and ductile.`
+    });
+    forces.push({
+      name:'London dispersion', color:'var(--teal)', strength:0.25,
+      desc:'Weak, temporary attractions from fluctuating electron density also act between atoms, but are minor compared to metallic bonding.'
+    });
+  } else if(el.cat === 'noble gas'){
+    forces.push({
+      name:'London dispersion only', color:'var(--teal)', strength:0.3,
+      desc:`${el.name} has a full valence shell and forms essentially no chemical bonds under normal conditions. Between separate atoms (e.g. in liquid or solid form at very low temperature), only weak, instantaneous-dipole London dispersion forces exist.`
+    });
+  } else if(el.cat === 'metalloid'){
+    forces.push({
+      name:'Covalent network bonding', color:'var(--violet)', strength:0.75,
+      desc:`${el.name} tends to form covalent bonds in an extended lattice (like silicon or boron), sharing electrons with neighboring atoms rather than releasing them freely as metals do.`
+    });
+  } else {
+    forces.push({
+      name:'Covalent bonding (as part of molecules)', color:'var(--violet)', strength:0.7,
+      desc:`${el.name} typically shares electron pairs with other nonmetal atoms to form covalent bonds within molecules, rather than existing as free single atoms.`
+    });
+    forces.push({
+      name:'London dispersion', color:'var(--teal)', strength:0.35,
+      desc:'Between separate molecules of this element (e.g. O2, N2, Cl2), weak London dispersion forces dominate unless the molecule is also polar.'
+    });
+  }
+  return forces;
+}
+
+// ---------------------------------------------------------------
+// Rendering: compound / molecule
+// ---------------------------------------------------------------
+async function renderCompound(cid, originalQuery){
+  setStatus(`<span class="loading-line"><span class="spinner"></span>Fetching 3D structure (CID ${cid})…</span>`);
+  const [{sdf, is3d}, props] = await Promise.all([ fetchSDF(cid), fetchProps(cid) ]);
+  setStatus(`<span class="loading-line"><span class="spinner"></span>Resolving display name…</span>`);
+  const commonName = await fetchCommonName(cid, props.IUPACName || originalQuery);
+
+  initViewer();
+  const model = viewer.addModel(sdf, 'sdf');
+  applyStyle();
+  viewer.zoomTo();
+  currentRender = { mode:'compound', el:null };
+  updateLabels();
+  if(spinning) viewer.spin('y',1);
+
+  const bondStats = summarizeBonds(model);
+  const forces = compoundForces(props, bondStats);
+
+  renderDataPanels({
+    mode:'compound',
+    formula: props.MolecularFormula || '—',
+    name: commonName || originalQuery,
+    mw: props.MolecularWeight ? `${props.MolecularWeight} g/mol` : '—',
+    atoms: bondStats.atomCount,
+    bonds: bondStats.bondCount,
+    extraKV: [
+      ['PubChem CID', cid],
+      ['Conformer', is3d ? 'Experimental/computed 3D' : '2D (3D unavailable — flattened view)'],
+      ['H-bond donors', props.HBondDonorCount ?? '—'],
+      ['H-bond acceptors', props.HBondAcceptorCount ?? '—'],
+      ['TPSA', props.TPSA != null ? props.TPSA + ' Å²' : '—'],
+      ['XLogP', props.XLogP ?? '—'],
+    ],
+    forces,
+    bondBreakdown: bondStats.breakdown,
+    note: null
+  });
+}
+
+function summarizeBonds(model){
+  const atoms = model.selectedAtoms({});
+  let bondCount = 0;
+  const breakdown = { single:0, double:0, triple:0, other:0 };
+  atoms.forEach(a=>{
+    if(a.bonds && a.bondOrder){
+      a.bonds.forEach((bIdx, i)=>{
+        if(bIdx > a.index){ // count each bond once
+          bondCount++;
+          const order = a.bondOrder[i];
+          if(order === 1) breakdown.single++;
+          else if(order === 2) breakdown.double++;
+          else if(order === 3) breakdown.triple++;
+          else breakdown.other++;
+        }
+      });
+    }
+  });
+  return { atomCount: atoms.length, bondCount, breakdown };
+}
+
+function compoundForces(props, bondStats){
+  const forces = [];
+  const formula = props.MolecularFormula || '';
+  const elements = (formula.match(/[A-Z][a-z]?/g) || []);
+  const hasMetal = elements.some(e=>METAL_SYMBOLS.has(e));
+  const hasHalogen = elements.some(e=>HALOGEN_SYMBOLS.has(e) || e==='O');
+  const hbDonor = props.HBondDonorCount || 0;
+  const hbAcceptor = props.HBondAcceptorCount || 0;
+  const tpsa = props.TPSA || 0;
+  const covalentUnits = props.CovalentUnitCount || 1;
+  const heavyAtoms = props.HeavyAtomCount || bondStats.atomCount;
+  const carbonCount = elements.filter(e=>e==='C').length;
+
+  // Ionic heuristic: metal + electronegative element, few distinct fragments, little/no carbon skeleton
+  const likelyIonic = hasMetal && hasHalogen && carbonCount <= 1 && covalentUnits >= 1;
+
+  if(likelyIonic){
+    forces.push({
+      name:'Ionic bonding', color:'var(--amber)', strength:0.9,
+      desc:'The formula combines a metal with a strongly electronegative element — characteristic of ionic compounds, where electrons transfer to form charged ions held together by strong electrostatic attraction throughout a crystal lattice.'
+    });
+  }
+
+  if(hbDonor > 0){
+    forces.push({
+      name:'Hydrogen bonding', color:'var(--violet)', strength:0.85,
+      desc:`This molecule has ${hbDonor} hydrogen-bond donor site${hbDonor>1?'s':''} (H attached to N, O, or F) and ${hbAcceptor} acceptor site${hbAcceptor!==1?'s':''}. Between molecules, these form unusually strong dipole attractions — the reason substances like water and ammonia have elevated boiling points.`
+    });
+  } else if(hbAcceptor > 0 || tpsa > 0){
+    forces.push({
+      name:'Dipole–dipole interactions', color:'var(--teal)', strength:0.6,
+      desc:'The molecule has polar bonds and an uneven charge distribution (positive and negative ends) without exposed H-bond donors, so neighboring molecules align via moderate dipole–dipole attraction.'
+    });
+  }
+
+  const nonpolar = tpsa === 0 && hbDonor === 0 && hbAcceptor === 0;
+  forces.push({
+    name:'London dispersion forces', color:'var(--teal)', strength: nonpolar ? 0.7 : 0.3,
+    desc: nonpolar
+      ? 'With no significant polarity detected, this is likely a nonpolar molecule — London dispersion (temporary, electron-fluctuation-induced attraction) is the dominant intermolecular force between its molecules.'
+      : 'Present in all molecules as a baseline attraction from fluctuating electron clouds, though weaker here than the dominant force above.'
+  });
+
+  if(bondStats.bondCount > 0 && !likelyIonic){
+    forces.unshift({
+      name:'Covalent bonding (intramolecular)', color:'var(--red)', strength:0.95,
+      desc:`Within each molecule, atoms are held together by ${bondStats.bondCount} shared-electron covalent bond${bondStats.bondCount!==1?'s':''} — this is the strongest force at play, but it acts inside the molecule rather than between molecules.`
+    });
+  }
+
+  return forces;
+}
+
+// ---------------------------------------------------------------
+// Panel rendering helpers
+// ---------------------------------------------------------------
+function setStatus(html){
+  dataCol.innerHTML = `<div class="panel"><h2>Status</h2><div class="empty-note">${html}</div></div>`;
+}
+
+function renderDataPanels({formula, name, mw, atoms, bonds, extraKV, forces, bondBreakdown, note}){
+  let html = '';
+
+  html += `<div class="panel">
+    <h2>Identity</h2>
+    <div class="kv">
+      <div class="k">Name</div><div class="v big">${escapeHtml(name)}</div>
+      <div class="k">Formula</div><div class="v">${escapeHtml(formula)}</div>
+      <div class="k">Mass</div><div class="v">${escapeHtml(String(mw))}</div>
+      <div class="k">Atoms</div><div class="v">${atoms}</div>
+      <div class="k">Bonds</div><div class="v">${bonds}${bondBreakdown ? bondBreakdownStr(bondBreakdown) : ''}</div>
+      ${(extraKV||[]).map(([k,v])=>`<div class="k">${escapeHtml(k)}</div><div class="v">${escapeHtml(String(v))}</div>`).join('')}
+    </div>
+    ${note ? `<div class="empty-note" style="margin-top:12px;">${escapeHtml(note)}</div>` : ''}
+  </div>`;
+
+  html += `<div class="panel">
+    <h2>Forces detected</h2>
+    ${forces.map(f=>`
+      <div class="force-item">
+        <div class="fname"><span class="dot" style="background:${f.color}"></span>${escapeHtml(f.name)}</div>
+        <div class="fdesc">${escapeHtml(f.desc)}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${Math.round(f.strength*100)}%; background:${f.color}"></div></div>
+      </div>
+    `).join('')}
+  </div>`;
+
+  dataCol.innerHTML = html;
+}
+
+function bondBreakdownStr(b){
+  const parts = [];
+  if(b.single) parts.push(`${b.single} single`);
+  if(b.double) parts.push(`${b.double} double`);
+  if(b.triple) parts.push(`${b.triple} triple`);
+  if(b.other) parts.push(`${b.other} other`);
+  return parts.length ? ` <span style="color:var(--text-dim)">(${parts.join(', ')})</span>` : '';
+}
+
+function capitalize(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+</script>
+</body>
+</html>
